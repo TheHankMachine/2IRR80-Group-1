@@ -1,7 +1,7 @@
 ﻿using Octokit.Internal;
 namespace Capstone;
 
-public class Cache
+public static class Cache
 {
     private static string GetCacheDirectory()
     {
@@ -49,9 +49,9 @@ public class Cache
             string path = CacheDirectory + name + ".json";
             File.WriteAllText(path, Serializer.Serialize(value));
         }
-        catch
+        catch (Exception e)
         {
-            Console.WriteLine($"error in caching {name}");
+            Console.WriteLine($"error in caching {name}]]\nThe following exception was skipped:\n{e.ToString()}");
         }
     }
 
@@ -65,7 +65,7 @@ public class Cache
         }
 
         var data = await callback();
-        SetCache("issues", data);
+        SetCache(cacheName, data);
         return data;
     }
 
