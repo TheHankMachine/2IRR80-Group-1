@@ -3,7 +3,7 @@
 namespace Capstone;
 using DotNetEnv;
 
-public class Env
+public static class Env
 {
     private static readonly string EnvPath = GetEnvPath();
     
