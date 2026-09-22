@@ -1,14 +1,9 @@
-﻿using System.Data;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using Octokit.Internal;
-
+﻿using Octokit.Internal;
 namespace Capstone;
-using Octokit;
 
 public class Cache
 {
-    private static DirectoryInfo GetSolutionDirectory()
+    private static string GetCacheDirectory()
     {
         var directory = new DirectoryInfo(Directory.GetCurrentDirectory());
         while (directory != null && !directory.GetFiles("*.sln").Any())
@@ -21,10 +16,12 @@ public class Cache
             throw new DirectoryNotFoundException("solution directory was not found");
         }
 
-        return directory;
+        var cacheDir = directory + "\\.cache\\";
+        Directory.CreateDirectory(cacheDir);
+        return cacheDir;
     }
 
-    private static readonly string CacheDirectory = GetSolutionDirectory() + "\\.cache\\";
+    private static readonly string CacheDirectory = GetCacheDirectory();
     private static readonly SimpleJsonSerializer Serializer = new SimpleJsonSerializer();
     
 

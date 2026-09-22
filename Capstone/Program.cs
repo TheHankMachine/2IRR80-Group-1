@@ -12,7 +12,7 @@ long startTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
 
 var r = await Cache.GetIfCached(
     () => client.PullRequest.GetAllForRepository("FortAwesome", "Font-Awesome"),
-    "issues",
+    "issues", 
     false
 );
 
