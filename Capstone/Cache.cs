@@ -35,7 +35,7 @@ public static class Cache
         }
         catch
         {
-            Console.WriteLine($"{name} was not found");
+            // Console.WriteLine($"{name} was not found");
             return default;
         }
     }
