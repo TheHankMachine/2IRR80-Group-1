@@ -4,20 +4,17 @@ namespace Capstone;
 
 public class ProgressBar(int barLength, int total)
 {
-    
-    public int BarLength { get; private set; } = barLength;
-
     // private static List<char> Idles = [ '⠇', '⠋', '⠙', '⠸', '⢰', '⠴', '⠦', '⡆' ];
     // private static List<char> Idles = [ '-', '\\', '|', '/' ];
-    private static List<string> Idles = [ "--", "\\/", "||", "/\\" ];
-    private int IdleCounter;
+    private static readonly List<string> Idles = [ "--", "\\/", "||", "/\\" ];
+    private int _idleCounter;
     
-    public void Update(int n)
+    public void Update(int nCompleted)
     {
-        float p = (float) n / total;
-        int b = (int) (barLength * p);
-        IdleCounter = (IdleCounter + 1) % Idles.Count;
-        Console.Write($"\r[{new string('#', b)}{new string('-', barLength - b)}] ({(100.0f * p).ToString("00.00")}%) {Idles[IdleCounter]} {n}/{total}");        
+        float percentage = (float) nCompleted / total;
+        int filledChar = (int) (barLength * percentage);
+        _idleCounter = (_idleCounter + 1) % Idles.Count;
+        Console.Write($"\r[{new string('#', filledChar)}{new string('-', barLength - filledChar)}] ({(100.0f * percentage):00.00}%) {Idles[_idleCounter]} {nCompleted}/{total}");        
     }
 
 
