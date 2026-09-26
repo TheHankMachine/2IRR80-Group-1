@@ -1,4 +1,5 @@
-﻿using Octokit.Internal;
+﻿using System.Text.RegularExpressions;
+using Octokit.Internal;
 namespace Capstone;
 
 public static class Cache
@@ -25,19 +26,23 @@ public static class Cache
     private static readonly SimpleJsonSerializer Serializer = new SimpleJsonSerializer();
     
 
-    private static T? GetCache<T>(string name)
+    private static T GetCache<T>(string name)
     {
-        try
-        {
-            // if i knew C# path utilities this would be nicer
-            string path = CacheDirectory + name + ".json";
-            return Serializer.Deserialize<T>(File.ReadAllText(path));
-        }
-        catch
-        {
-            // Console.WriteLine($"{name} was not found");
-            return default;
-        }
+        // try
+        // {
+        string path = CacheDirectory + name + ".json";
+        return Serializer.Deserialize<T>(File.ReadAllText(path));
+        // }
+        // catch
+        // {
+        //     return null;
+        // }
+    }
+
+
+    private static string GetFileSafeKey(string key)
+    {
+        return Regex.Replace(key, @"[\/:*?<>|]", "");
     }
 
 
@@ -56,17 +61,25 @@ public static class Cache
     }
 
 
-    public static async Task<T> GetIfCached<T>(Func<Task<T>> callback, string cacheName, bool forceCacheReload = false)
+    public static async Task<T> GetIfCached<T>(Func<Task<T>> callback, string key, bool forceCacheReload = false)
     {
-        var cache = GetCache<T>(cacheName);
-        if (cache != null && !forceCacheReload)
+        var cacheName = GetFileSafeKey(key);
+        try
         {
-            return cache;
+            var cache = GetCache<T>(cacheName);
+            if (cache != null && !forceCacheReload)
+            {
+                return cache;
+            }
+            // sorry
+            throw new Exception("goto catch block");
         }
-
-        var data = await callback();
-        SetCache(cacheName, data);
-        return data;
+        catch (Exception e)
+        {
+            var data = await callback();
+            SetCache(cacheName, data);
+            return data;
+        }
     }
 
 }

@@ -5,36 +5,60 @@ namespace Capstone;
 
 public class Analysis
 {
-    private readonly string _repoName;
-    private readonly string _repoOwner;
-    public GitHubClient Client { get; private set; }
+    protected readonly string RepoName;
+    protected readonly string RepoOwner;
+    protected GitHubClient Client { get; private set; }
 
 
     public Analysis(string repoName, string repoOwner)
     {
-        _repoName = repoName;
-        _repoOwner = repoOwner;
+        RepoName = repoName;
+        RepoOwner = repoOwner;
         Client = new GitHubClient(new ProductHeaderValue("godotengine"));
-        Env.AddAccessToken(Client);
+        // Env.AddAccessToken(Client);
     }
 
     public async Task<int> GetCount(string request)
     {
-        var fullRequest = $"repo:{_repoOwner}/{_repoName} {request}";
-        SearchIssuesRequest req = new(fullRequest);
-        req.Page = 1;
-        req.PerPage = 1;
-        return (await Client.Search.SearchIssues(req)).TotalCount;
+        return await Cache.GetIfCached(async () => {
+            var fullRequest = $"repo:{RepoOwner}/{RepoName} {request}";
+            SearchIssuesRequest req = new(fullRequest);
+            req.Page = 1;
+            req.PerPage = 1;
+            return (await Client.Search.SearchIssues(req)).TotalCount;
+        }, $"{RepoName} {request}");
     }
 
+
+    public async Task<List<(DateTimeOffset month, int count)>> GetCountPerMonth(string request, DateTime startMonth, DateTime endMonth)
+    {
+        List<(DateTimeOffset month, int count)> result = [];
+        var month = new DateTime(startMonth.Year, startMonth.Month, 1);
+        endMonth = new DateTime(endMonth.Year, endMonth.Month, 1);
+
+        ProgressBar bar = new(50, ((endMonth.Year - startMonth.Year) * 12) + endMonth.Month - startMonth.Month);
+        var i = 0;
+        
+        while (month <= endMonth && i <= 500)
+        {
+            i++;
+            bar.Update(i);
+            
+            result.Add((month, await GetCount($"{request} created:{month:yyyy-MM}")));
+            month = month.AddMonths(1);
+        }
+        return result;
+    }
+
+    
     // I would NOT recommend not using this
     private async Task<List<Issue>> GetAllWithJankyHack(string request)
     {
         List<Issue> result = [];
 
-        var fullRequest = $"repo:{_repoOwner}/{_repoName} {request} sort:created-asc";
+        var fullRequest = $"repo:{RepoOwner}/{RepoName} {request} sort:created-asc";
 
-        var lowerBound = Client.Repository.Get(_repoOwner, _repoName).Result.CreatedAt;
+        var lowerBound = Client.Repository.Get(RepoOwner, RepoName).Result.CreatedAt;
         var today = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ssZ");
 
         // hack to get around paging limitations
@@ -66,39 +90,8 @@ public class Analysis
 
         return result;
     }
-
-    // docs in C# are so ugly wtf.
-    /// <returns> the top n users based on number of pull requests
-    /// that they authored that have been merged. </returns>
-    public async Task<List<string>> GetTopN(int n)
-    {
-        if (n != 10)
-        {
-            throw new InvalidEnumArgumentException("n is not 10");
-        }
-
-        // hardcoded from our previous approach since we had issues otherwise 
-        List<string> top10 =
-        [
-            "Calinou", "akien-mga", "bruvzg", "KoBeWi", "timothyqiu", 
-            "Chaosus", "YeldhamDev", "RandomShaper", "aaronfranke", "clayjohn"
-        ];
-
-        return top10;
-        
-        // var contributors = await Cache.GetIfCached(() => Client.Repository.GetAllContributors(_repoOwner, _repoName),
-        //     $"{_repoName}-contributors");
-        //
-        // return contributors
-        //     // .OrderByDescending(c => c.Contributions)
-        //     // .Take(n * 10)
-        //     .Select(c => new { login = c.Login, nprs = GetCount($"is:merged is:pr author:{c.Login}").Result})
-        //     .OrderByDescending(t => t.nprs)
-        //     .Take(n)
-        //     .Select(c => c.login)
-        //     .ToList();
-    }
-
+    
+    
     public string GetCSVTable(List<string> logins, List<(string name, Func<string, Task<int>> eval)> metrics)
     {
         string result = " ," + String.Join(",", metrics.Select(metric => metric.name));
