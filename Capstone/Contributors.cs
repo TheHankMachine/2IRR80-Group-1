@@ -22,7 +22,7 @@ public class Contributors(string repoName, string repoOwner) : Analysis(repoName
     {
         if (n != 10)
         {
-            throw new InvalidEnumArgumentException("n is not 10");
+            throw new ArgumentException("n is not 10");
         }
 
         // hardcoded from our previous approach since we had issues otherwise 

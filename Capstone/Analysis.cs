@@ -3,6 +3,8 @@ using Octokit;
 
 namespace Capstone;
 
+using MonthData = (DateTimeOffset month, int count);
+
 public class Analysis
 {
     protected readonly string RepoName;
@@ -15,7 +17,7 @@ public class Analysis
         RepoName = repoName;
         RepoOwner = repoOwner;
         Client = new GitHubClient(new ProductHeaderValue("godotengine"));
-        // Env.AddAccessToken(Client);
+        Env.AddAccessToken(Client);
     }
 
     public async Task<int> GetCount(string request)
@@ -30,41 +32,50 @@ public class Analysis
     }
 
 
-    public async Task<List<(DateTimeOffset month, int count)>> GetCountPerMonth(string request, DateTime startMonth, DateTime endMonth)
+    public Task<List<MonthData>> GetCountPerMonth(string request, DateTime startMonth, DateTime endMonth)
     {
-        List<(DateTimeOffset month, int count)> result = [];
+        return GetCountPerMonth(
+            async month => await GetCount($"{request} created:{month:yyyy-MM}"),
+            startMonth,
+            endMonth
+        );
+    }
+    
+    
+    public async Task<List<MonthData>> GetCountPerMonth(Func<DateTime, Task<int>> callback, DateTime startMonth, DateTime endMonth)
+    {
+        List<MonthData> result = [];
         var month = new DateTime(startMonth.Year, startMonth.Month, 1);
         endMonth = new DateTime(endMonth.Year, endMonth.Month, 1);
 
-        ProgressBar bar = new(50, ((endMonth.Year - startMonth.Year) * 12) + endMonth.Month - startMonth.Month);
+        ProgressBar bar = new(50, (endMonth.Year - startMonth.Year) * 12 + endMonth.Month - startMonth.Month);
         var i = 0;
         
         while (month <= endMonth && i <= 500)
         {
+            result.Add((month, await callback(month)));
+            month = month.AddMonths(1);
+            
             i++;
             bar.Update(i);
-            
-            result.Add((month, await GetCount($"{request} created:{month:yyyy-MM}")));
-            month = month.AddMonths(1);
         }
         return result;
     }
 
     
     // I would NOT recommend not using this
-    private async Task<List<Issue>> GetAllWithJankyHack(string request)
+    private async Task<List<Issue>> GetAllWithJankyHack(string request, DateTimeOffset lowerBound)
     {
         List<Issue> result = [];
 
         var fullRequest = $"repo:{RepoOwner}/{RepoName} {request} sort:created-asc";
 
-        var lowerBound = Client.Repository.Get(RepoOwner, RepoName).Result.CreatedAt;
-        var today = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ssZ");
-
+        var upperBound = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ssZ");
+        
         // hack to get around paging limitations
         while (true)
         {
-            SearchIssuesRequest req = new($"{fullRequest} created:{lowerBound:yyyy-MM-ddTHH:mm:ssZ}..{today}")
+            SearchIssuesRequest req = new($"{fullRequest} created:{lowerBound:yyyy-MM-ddTHH:mm:ssZ}..{upperBound}")
                 { Page = 1, PerPage = 100 };
 
             try
@@ -82,7 +93,7 @@ public class Analysis
                 var waitTime = ex.Reset - DateTimeOffset.UtcNow;
                 if (waitTime.TotalMilliseconds > 0)
                 {
-                    Console.WriteLine($"Encountered Rate Limit. Sleeping for {waitTime.TotalMilliseconds}ms");
+                    Console.WriteLine($"Encountered Rate Limit. Sleeping for {waitTime.TotalMilliseconds / 1000.0f:F3}s");
                     await Task.Delay(waitTime);
                 }
             }
@@ -92,7 +103,7 @@ public class Analysis
     }
     
     
-    public string GetCSVTable(List<string> logins, List<(string name, Func<string, Task<int>> eval)> metrics)
+    public void PrintCSVTable(List<string> logins, List<(string name, Func<string, Task<int>> eval)> metrics)
     {
         string result = " ," + String.Join(",", metrics.Select(metric => metric.name));
         foreach (var login in logins)
@@ -103,6 +114,7 @@ public class Analysis
                 result += "," + metric.eval(login).Result;
             }
         }
-        return result;
+        Console.WriteLine();
+        Console.WriteLine(result);
     }
 }
