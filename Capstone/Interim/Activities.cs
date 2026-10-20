@@ -49,7 +49,7 @@ public class Activities(string repoName, string repoOwner) : Analysis(repoName, 
         
         // this might wrongfully remove PR which were reviewed a full year
         // after their creation. However, it should greatly reduce wasted
-        // github requests.
+        // GitHub requests.
         var pullRequestSampleEarliestInclusionDate = result[0].month.AddYears(-1);
         var reviewInclusionLowerBound = result.First().month;
         var reviewInclusionUpperBound = result.Last().month.AddMonths(1);

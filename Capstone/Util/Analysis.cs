@@ -10,6 +10,7 @@ public class Analysis
     protected readonly string RepoOwner;
     protected GitHubClient Client { get; private set; }
 
+    
 
     public Analysis(string repoName, string repoOwner)
     {
@@ -30,8 +31,7 @@ public class Analysis
             return (await Client.Search.SearchIssues(req)).TotalCount;
         }, $"{RepoName} {request}");
     }
-
-
+    
     public Task<List<MonthData>> GetCountPerMonth(string request, DateTime startMonth, DateTime endMonth)
     {
         return GetCountPerMonth(
@@ -40,8 +40,7 @@ public class Analysis
             endMonth
         );
     }
-
-
+    
     public async Task<List<MonthData>> GetCountPerMonth(Func<DateTime, Task<int>> callback, DateTime startMonth, DateTime endMonth)
     {
         List<MonthData> result = [];
@@ -59,8 +58,7 @@ public class Analysis
         }
         return result;
     }
-
-
+    
     // I would NOT recommend not using this
     protected async Task<List<Issue>> GetAllWithJankyHack(string request, DateTimeOffset lowerBound)
     {
@@ -99,8 +97,7 @@ public class Analysis
 
         return result;
     }
-
-
+    
     public void PrintCSVTable(List<string> logins, List<(string name, Func<string, Task<int>> eval)> metrics)
     {
         string result = " ," + String.Join(",", metrics.Select(metric => metric.name));

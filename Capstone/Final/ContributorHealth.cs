@@ -333,6 +333,7 @@ namespace Capstone
             }
         }
 
+        #region PR-Issue-Review Collection
         // PULL REQUEST COLLECTION - DATE CREATED
 
         private async Task<List<HealthSearchItem>>
@@ -513,7 +514,7 @@ namespace Capstone
 
                 var response = await WithRateLimitRetry(() => Client.Search.SearchIssues(request));
 
-                //fail if there are more than 1000 responses (github limit)
+                //fail if there are more than 1000 responses (GitHub limit)
                 if (page == 1 && response.TotalCount > 1000)
                 {
                     throw new InvalidOperationException(
@@ -573,7 +574,9 @@ namespace Capstone
                 return result;
             }, cacheKey);
         }
-
+        
+        #endregion
+        
         // RATE LIMIT HANDLING :(
 
         private async Task<T>

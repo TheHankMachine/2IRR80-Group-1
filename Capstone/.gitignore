@@ -1,4 +1,3 @@
 bin/
 obj/
 .env
-.cache/godot_PRs.json
