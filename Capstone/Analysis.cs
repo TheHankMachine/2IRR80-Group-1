@@ -1,5 +1,4 @@
-﻿using System.ComponentModel;
-using Octokit;
+﻿using Octokit;
 
 namespace Capstone;
 
@@ -22,7 +21,8 @@ public class Analysis
 
     public async Task<int> GetCount(string request)
     {
-        return await Cache.GetIfCached(async () => {
+        return await Cache.GetIfCached(async () =>
+        {
             var fullRequest = $"repo:{RepoOwner}/{RepoName} {request}";
             SearchIssuesRequest req = new(fullRequest);
             req.Page = 1;
@@ -40,43 +40,41 @@ public class Analysis
             endMonth
         );
     }
-    
-    
+
+
     public async Task<List<MonthData>> GetCountPerMonth(Func<DateTime, Task<int>> callback, DateTime startMonth, DateTime endMonth)
     {
         List<MonthData> result = [];
         var month = new DateTime(startMonth.Year, startMonth.Month, 1);
         endMonth = new DateTime(endMonth.Year, endMonth.Month, 1);
 
-        ProgressBar bar = new(50, (endMonth.Year - startMonth.Year) * 12 + endMonth.Month - startMonth.Month);
         var i = 0;
-        
+
         while (month <= endMonth && i <= 500)
         {
             result.Add((month, await callback(month)));
             month = month.AddMonths(1);
-            
+
             i++;
-            bar.Update(i);
         }
         return result;
     }
 
-    
+
     // I would NOT recommend not using this
-    private async Task<List<Issue>> GetAllWithJankyHack(string request, DateTimeOffset lowerBound)
+    protected async Task<List<Issue>> GetAllWithJankyHack(string request, DateTimeOffset lowerBound)
     {
         List<Issue> result = [];
 
         var fullRequest = $"repo:{RepoOwner}/{RepoName} {request} sort:created-asc";
 
         var upperBound = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ssZ");
-        
+
         // hack to get around paging limitations
         while (true)
         {
             SearchIssuesRequest req = new($"{fullRequest} created:{lowerBound:yyyy-MM-ddTHH:mm:ssZ}..{upperBound}")
-                { Page = 1, PerPage = 100 };
+            { Page = 1, PerPage = 100 };
 
             try
             {
@@ -101,8 +99,8 @@ public class Analysis
 
         return result;
     }
-    
-    
+
+
     public void PrintCSVTable(List<string> logins, List<(string name, Func<string, Task<int>> eval)> metrics)
     {
         string result = " ," + String.Join(",", metrics.Select(metric => metric.name));
@@ -116,5 +114,29 @@ public class Analysis
         }
         Console.WriteLine();
         Console.WriteLine(result);
+    }
+
+    protected async Task<T> WithRateLimitRetry<T>(Func<Task<T>> action)
+    {
+        while (true)
+        {
+            try
+            {
+                return await action();
+            }
+            catch (RateLimitExceededException ex)
+            {
+                var waitTime = ex.Reset - DateTimeOffset.UtcNow;
+
+                if (waitTime > TimeSpan.Zero)
+                {
+                    Console.WriteLine(
+                        $"Rate limit reached. Waiting {waitTime.TotalSeconds:F0}s."
+                    );
+
+                    await Task.Delay(waitTime);
+                }
+            }
+        }
     }
 }
