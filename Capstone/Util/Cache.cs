@@ -72,7 +72,7 @@ public static class Cache
                 return cache;
             }
             // sorry
-            throw new Exception("goto catch block");
+            throw new Exception("goto catch block"); // :(
         }
         catch (Exception e)
         {
