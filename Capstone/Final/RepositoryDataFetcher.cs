@@ -29,6 +29,21 @@ public record FetchOptions
 
     /// <summary>Ignore existing cache files and re-download everything.</summary>
     public bool ForceCacheReload { get; init; } = false;
+
+    /// <summary>Include issues. If false, issues are skipped and don't count toward SampleSize. [Sill consumes an API call tho]</summary>
+    public bool IncludeIssues { get; init; } = true;
+
+    /// <summary>Include pull requests. If false, PRs are skipped and don't count toward SampleSize. [Sill consumes an API call tho]</summary>
+    public bool IncludePullRequests { get; init; } = true;
+
+    /// <summary>PR reviews (approvals, change requests). [1+ calls per PR] </summary>
+    public bool FetchReviews { get; init; } = true;
+
+    /// <summary>Inline comments on a PR's diff. [1+ calls per PR]</summary>
+    public bool FetchReviewComments { get; init; } = true;
+
+    /// <summary>Conversation comments on issues and PRs. [1+ calls per item]</summary>
+    public bool FetchComments { get; init; } = true;
 }
 
 /// <summary>A PR together with everything attached to it. Raw data, nothing precomputed.</summary>
@@ -131,15 +146,19 @@ public class RepositoryDataFetcher
 
             if (issue.PullRequest != null)
             {
+                if (!_options.IncludePullRequests) continue;
+
                 var pr = await GetPullRequestAsync(number);
-                var reviews = await GetReviewsAsync(number);
-                var reviewComments = await GetReviewCommentsAsync(number);
-                var comments = await GetCommentsAsync(number);
+                var reviews = _options.FetchReviews ? await GetReviewsAsync(number) : [];
+                var reviewComments = _options.FetchReviewComments ? await GetReviewCommentsAsync(number) : [];
+                var comments = _options.FetchComments ? await GetCommentsAsync(number) : [];
                 prs.Add(new PullRequestData(pr, reviews, reviewComments, comments));
             }
             else
             {
-                var comments = await GetCommentsAsync(number);
+                if (!_options.IncludeIssues) continue;
+
+                var comments = _options.FetchComments ? await GetCommentsAsync(number) : [];
                 issues.Add(new IssueData(issue, comments));
             }
 
