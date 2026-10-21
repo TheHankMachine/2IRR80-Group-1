@@ -311,9 +311,18 @@ public class RepositoryDataFetcher
     private static bool IsMissing(ApiException e) =>
         e.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone;
 
-    /// <summary>Runs an Octokit call, sleeping until the rate limit resets if it is hit.</summary>
+    private const int MaxTransientRetries = 8;
+
+    /// <summary>
+    /// Runs an Octokit call and retries on problems that are not our fault:
+    ///  - primary rate limit: sleeps until the reset time
+    ///  - secondary rate limit ("abuse" detection): sleeps for the time GitHub asks for
+    ///  - 5xx errors (e.g. 503 Service Unavailable), network errors and timeouts: exponential backoff
+    /// Anything else (404, 401, ...) is thrown to the caller as before.
+    /// </summary>
     private static async Task<T> WithRateLimit<T>(Func<Task<T>> call)
     {
+        int transientFailures = 0;
         while (true)
         {
             try
@@ -327,6 +336,28 @@ public class RepositoryDataFetcher
                 Console.WriteLine($"\nRate limit hit. Waiting {wait.TotalMinutes:0.0} min until reset...");
                 await Task.Delay(wait);
             }
+            catch (AbuseException e)
+            {
+                var wait = TimeSpan.FromSeconds((e.RetryAfterSeconds ?? 60) + 5);
+                Console.WriteLine($"\nSecondary rate limit hit. Waiting {wait.TotalSeconds:0} s...");
+                await Task.Delay(wait);
+            }
+            catch (Exception e) when (IsTransient(e) && ++transientFailures <= MaxTransientRetries)
+            {
+                // 2, 4, 8, 16, 32, 60, 60, 60 seconds
+                var wait = TimeSpan.FromSeconds(Math.Min(60, Math.Pow(2, transientFailures)));
+                Console.WriteLine($"\nTransient error ({e.GetType().Name}: {e.Message}). Retry {transientFailures}/{MaxTransientRetries} in {wait.TotalSeconds:0} s...");
+                await Task.Delay(wait);
+            }
         }
     }
+
+    private static bool IsTransient(Exception e) => e switch
+    {
+        RateLimitExceededException or AbuseException => false, // handled separately above
+        ApiException api => (int)api.StatusCode >= 500,
+        HttpRequestException => true,
+        TaskCanceledException => true, // HttpClient timeouts surface this way
+        _ => false
+    };
 }
