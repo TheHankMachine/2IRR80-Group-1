@@ -1,4 +1,4 @@
-﻿using System.Text.RegularExpressions;
+using System.Text.RegularExpressions;
 using Octokit.Internal;
 namespace Capstone;
 
@@ -80,6 +80,31 @@ public static class Cache
             SetCache(cacheName, data);
             return data;
         }
+    }
+
+    /// <summary>
+    /// Like GetIfCached, but stores the text exactly as returned by the callback (no serialization step).
+    /// Used for raw GitHub JSON, which is later parsed with Octokit's own deserializer.
+    /// </summary>
+    public static async Task<string> GetRawIfCached(Func<Task<string>> callback, string key, bool forceCacheReload = false)
+    {
+        string path = CacheDirectory + GetFileSafeKey(key) + ".json";
+
+        if (!forceCacheReload && File.Exists(path))
+        {
+            return await File.ReadAllTextAsync(path);
+        }
+
+        string raw = await callback();
+        try
+        {
+            await File.WriteAllTextAsync(path, raw);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"error in caching {key}\nThe following exception was skipped:\n{e}");
+        }
+        return raw;
     }
 
 }
