@@ -119,6 +119,7 @@ public class RepositoryDataFetcher
         bar.Update(0);
 
         int accepted = 0;
+        int skippedMissing = 0;
         for (int i = 0; i < candidates.Length && accepted < target; i++)
         {
             // Lazy Fisher-Yates: only shuffles as far as we actually draw, so no "load all then pick".
@@ -144,22 +145,33 @@ public class RepositoryDataFetcher
             if (_options.From != null && issue.CreatedAt < _options.From) continue;
             if (_options.To != null && issue.CreatedAt >= _options.To) continue;
 
-            if (issue.PullRequest != null)
+            // Everything below can 404 if the item was deleted or transferred to another repo after we saw it
+            // (or after it was cached). Skip such items and draw another number instead of crashing.
+            // Nothing is added to the results until ALL of an item's parts were fetched successfully.
+            try
             {
-                if (!_options.IncludePullRequests) continue;
+                if (issue.PullRequest != null)
+                {
+                    if (!_options.IncludePullRequests) continue;
 
-                var pr = await GetPullRequestAsync(number);
-                var reviews = _options.FetchReviews ? await GetReviewsAsync(number) : [];
-                var reviewComments = _options.FetchReviewComments ? await GetReviewCommentsAsync(number) : [];
-                var comments = _options.FetchComments ? await GetCommentsAsync(number) : [];
-                prs.Add(new PullRequestData(pr, reviews, reviewComments, comments));
+                    var pr = await GetPullRequestAsync(number);
+                    var reviews = _options.FetchReviews ? await GetReviewsAsync(number) : [];
+                    var reviewComments = _options.FetchReviewComments ? await GetReviewCommentsAsync(number) : [];
+                    var comments = _options.FetchComments ? await GetCommentsAsync(number) : [];
+                    prs.Add(new PullRequestData(pr, reviews, reviewComments, comments));
+                }
+                else
+                {
+                    if (!_options.IncludeIssues) continue;
+
+                    var comments = _options.FetchComments ? await GetCommentsAsync(number) : [];
+                    issues.Add(new IssueData(issue, comments));
+                }
             }
-            else
+            catch (ApiException e) when (IsMissing(e))
             {
-                if (!_options.IncludeIssues) continue;
-
-                var comments = _options.FetchComments ? await GetCommentsAsync(number) : [];
-                issues.Add(new IssueData(issue, comments));
+                skippedMissing++;
+                continue;
             }
 
             accepted++;
@@ -167,6 +179,8 @@ public class RepositoryDataFetcher
         }
 
         Console.WriteLine();
+        if (skippedMissing > 0)
+            Console.WriteLine($"Skipped {skippedMissing} item(s) that disappeared while fetching (deleted or transferred).");
         prs.Sort((a, b) => a.PullRequest.Number.CompareTo(b.PullRequest.Number));
         issues.Sort((a, b) => a.Issue.Number.CompareTo(b.Issue.Number));
         return new RepositoryDataset(_options, prs, issues);
