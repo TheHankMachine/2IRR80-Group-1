@@ -15,13 +15,11 @@ FetchOptions fetchOptions = new FetchOptions
 {
     From = new DateTimeOffset(2025, 10, 18, 0, 0, 0, TimeSpan.Zero),
     To = new DateTimeOffset(2026, 10, 18, 0, 0, 0, TimeSpan.Zero),
-    SampleSize = 1000,
-    FetchComments = false,
-    FetchReviewComments = false
+    FetchComments = true,
+    FetchReviewComments = true
 };
 RepositoryDataFetcher dataFetcher = new (fetchOptions);
 var data = await dataFetcher.FetchAsync();
 
-CsvExportOptions csvOptions = new CsvExportOptions();
-CsvExporter exporter = new CsvExporter(csvOptions);
+CsvExporter exporter = new CsvExporter("2025-oct to 2026-oct");
 exporter.Export(data);
