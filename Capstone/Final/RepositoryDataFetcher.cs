@@ -30,10 +30,10 @@ public record FetchOptions
     /// <summary>Ignore existing cache files and re-download everything.</summary>
     public bool ForceCacheReload { get; init; } = false;
 
-    /// <summary>Include issues. If false, issues are skipped and don't count toward SampleSize. [Sill consumes an API call tho]</summary>
+    /// <summary>Include issues. If false, issues are skipped and don't count toward SampleSize. [Still consumes an API call tho]</summary>
     public bool IncludeIssues { get; init; } = true;
 
-    /// <summary>Include pull requests. If false, PRs are skipped and don't count toward SampleSize. [Sill consumes an API call tho]</summary>
+    /// <summary>Include pull requests. If false, PRs are skipped and don't count toward SampleSize. [Still consumes an API call tho]</summary>
     public bool IncludePullRequests { get; init; } = true;
 
     /// <summary>PR reviews (approvals, change requests). [1+ calls per PR] </summary>
@@ -44,6 +44,13 @@ public record FetchOptions
 
     /// <summary>Conversation comments on issues and PRs. [1+ calls per item]</summary>
     public bool FetchComments { get; init; } = true;
+
+    /// <summary>
+    /// Full profile (display name, company, blog, location, account age, ...) of every account that appears
+    /// anywhere in the fetched data. [1 call per unique account]
+    /// Note: profiles are the CURRENT state of the account, not what it looked like during the period.
+    /// </summary>
+    public bool FetchUserProfiles { get; init; } = true;
 }
 
 /// <summary>A PR together with everything attached to it. Raw data, nothing precomputed.</summary>
@@ -61,14 +68,18 @@ public record IssueData(
 public record RepositoryDataset(
     FetchOptions Options,
     List<PullRequestData> PullRequests,
-    List<IssueData> Issues);
+    List<IssueData> Issues,
+    List<User> Users); // full profiles of every account that appears in the PRs/issues above
 
 /// <summary>
-/// Fetches issues, PRs, reviews and comments for a repository.
+/// Fetches issues, PRs, reviews, comments and user profiles for a repository.
 ///
 /// Sampling works on item NUMBERS: issues and PRs share one number sequence per repo, and numbers
 /// grow with creation time. We binary-search the number range that matches the time period, pick
 /// random numbers from that range, and fetch only those items.
+///
+/// User profiles are fetched afterwards, for every unique login that appears in the fetched items
+/// (authors, mergers, closers, assignees, reviewers, commenters).
 ///
 /// Caching: the cache stores the RAW JSON GitHub returned (one file per object) and turns it into
 /// Octokit objects with Octokit's own deserializer, the same path a normal API call takes.
@@ -86,7 +97,7 @@ public class RepositoryDataFetcher
 
     private readonly GitHubClient _client;
     private readonly FetchOptions _options;
-    
+
     public RepositoryDataFetcher(FetchOptions options)
     {
         _client = new GitHubClient(new ProductHeaderValue("capstone-project-health"));
@@ -100,6 +111,13 @@ public class RepositoryDataFetcher
 
     public async Task<RepositoryDataset> FetchAsync()
     {
+        var (prs, issues) = await FetchItemsAsync();
+        var users = _options.FetchUserProfiles ? await FetchUsersAsync(prs, issues) : [];
+        return new RepositoryDataset(_options, prs, issues, users);
+    }
+
+    private async Task<(List<PullRequestData> Prs, List<IssueData> Issues)> FetchItemsAsync()
+    {
         Console.WriteLine("Determining item number range for the period...");
         int max = await GetHighestNumberAsync();
         int first = _options.From == null ? 1 : await FindFirstNumberCreatedAtOrAfterAsync(_options.From.Value, max);
@@ -111,7 +129,7 @@ public class RepositoryDataFetcher
 
         var prs = new List<PullRequestData>();
         var issues = new List<IssueData>();
-        if (target == 0) return new RepositoryDataset(_options, prs, issues);
+        if (target == 0) return (prs, issues);
 
         var rng = _options.Seed.HasValue ? new Random(_options.Seed.Value) : new Random();
         bool shuffle = _options.SampleSize != null;
@@ -183,7 +201,61 @@ public class RepositoryDataFetcher
             Console.WriteLine($"Skipped {skippedMissing} item(s) that disappeared while fetching (deleted or transferred).");
         prs.Sort((a, b) => a.PullRequest.Number.CompareTo(b.PullRequest.Number));
         issues.Sort((a, b) => a.Issue.Number.CompareTo(b.Issue.Number));
-        return new RepositoryDataset(_options, prs, issues);
+        return (prs, issues);
+    }
+
+    /// <summary>Fetches the full profile of every unique account that appears in the fetched items.</summary>
+    private async Task<List<User>> FetchUsersAsync(List<PullRequestData> prs, List<IssueData> issues)
+    {
+        var logins = CollectLogins(prs, issues);
+        Console.WriteLine($"Fetching {logins.Count} user profiles...");
+
+        var users = new List<User>();
+        if (logins.Count == 0) return users;
+
+        var bar = new ProgressBar(40, logins.Count);
+        bar.Update(0);
+
+        int missing = 0;
+        for (int i = 0; i < logins.Count; i++)
+        {
+            try
+            {
+                users.Add(await GetUserAsync(logins[i]));
+            }
+            catch (ApiException e) when (IsMissing(e))
+            {
+                missing++; // account was deleted or renamed since; it still appears in the item data by its old login
+            }
+            bar.Update(i + 1);
+        }
+
+        Console.WriteLine();
+        if (missing > 0)
+            Console.WriteLine($"Skipped {missing} profile(s) that no longer exist (deleted or renamed accounts).");
+        return users;
+    }
+
+    /// <summary>Every login that appears anywhere in the items, once, sorted.</summary>
+    private static List<string> CollectLogins(List<PullRequestData> prs, List<IssueData> issues)
+    {
+        var fromPrs = prs.SelectMany(p =>
+            new[] { p.PullRequest.User?.Login, p.PullRequest.MergedBy?.Login }
+                .Concat(p.Reviews.Select(r => r.User?.Login))
+                .Concat(p.ReviewComments.Select(c => c.User?.Login))
+                .Concat(p.Comments.Select(c => c.User?.Login)));
+
+        var fromIssues = issues.SelectMany(i =>
+            new[] { i.Issue.User?.Login, i.Issue.ClosedBy?.Login }
+                .Concat(i.Issue.Assignees?.Select(a => a.Login) ?? Enumerable.Empty<string>())
+                .Concat(i.Comments.Select(c => c.User?.Login)));
+
+        return fromPrs.Concat(fromIssues)
+            .Where(login => !string.IsNullOrEmpty(login))
+            .Select(login => login!)
+            .Distinct(StringComparer.OrdinalIgnoreCase) // GitHub logins are case-insensitive
+            .OrderBy(login => login, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     // ------------------------------------------------------------------
@@ -206,6 +278,13 @@ public class RepositoryDataFetcher
     /// <summary>Conversation comments; the same endpoint serves issues and PRs.</summary>
     public Task<List<IssueComment>> GetCommentsAsync(int number) =>
         GetListAsync<IssueComment>($"{Prefix}_issue{number}_comments", $"{RepoUrl}/issues/{number}/comments");
+
+    /// <summary>
+    /// Full user profile. Not repo-specific, so the cache key has no repo prefix and is shared between repos.
+    /// The login is escaped because bot logins contain brackets, e.g. "dependabot[bot]".
+    /// </summary>
+    public Task<User> GetUserAsync(string login) =>
+        GetObjectAsync<User>($"user_{login.ToLowerInvariant()}", $"users/{Uri.EscapeDataString(login)}");
 
     // ------------------------------------------------------------------
     // Raw JSON fetching + caching

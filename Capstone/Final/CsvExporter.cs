@@ -16,6 +16,8 @@ namespace Capstone;
 ///   review_comments.csv one row per inline diff comment  pr_number     -> pull_requests.number
 ///   comments.csv        conversation comments on both    parent_type ("issue" | "pull_request") + parent_number
 ///                                                        -> issues.number or pull_requests.number
+///   users.csv           one row per account profile      key: login   <- author, reviewer, merged_by, closed_by, assignees
+///                       (current profile state; accounts deleted since are missing)
 ///   dataset.json        fetch options (period, sample size, seed), so you know what the data is a sample of
 ///
 /// Issues and PRs share one number sequence per repo, so a number is unique across both files.
@@ -62,6 +64,7 @@ public class CsvExporter
             WriteReviews(data.PullRequests),
             WriteReviewComments(data.PullRequests),
             WriteComments(data),
+            WriteUsers(data.Users),
             WriteMetadata(data.Options),
         ];
     }
@@ -191,7 +194,34 @@ public class CsvExporter
 
         return WriteCsv("comments.csv", rows, cols);
     }
-    
+
+    private string WriteUsers(List<User> users)
+    {
+        var cols = new List<Column<User>>
+        {
+            Col<User>("login", u => u.Login),
+            Col<User>("id", u => u.Id),
+            Col<User>("type", u => u.Type),
+            Col<User>("name", u => u.Name),
+            Col<User>("company", u => u.Company),
+            Col<User>("blog", u => u.Blog),
+            Col<User>("location", u => u.Location),
+            Col<User>("email", u => u.Email), // only the PUBLIC profile email, usually empty
+            Col<User>("bio", u => u.Bio),
+            Col<User>("hireable", u => u.Hireable),
+            Col<User>("site_admin", u => u.SiteAdmin),
+            Col<User>("public_repos", u => u.PublicRepos),
+            Col<User>("followers", u => u.Followers),
+            Col<User>("following", u => u.Following),
+            Col<User>("created_at", u => u.CreatedAt),
+            Col<User>("updated_at", u => u.UpdatedAt),
+            Col<User>("url", u => u.HtmlUrl),
+        };
+
+        return WriteCsv("users.csv", users, cols);
+    }
+
+    /// <summary>Records what the data is (repo, period, sample size, seed) next to the CSVs.</summary>
     private string WriteMetadata(FetchOptions o)
     {
         var meta = new
@@ -204,6 +234,7 @@ public class CsvExporter
             seed = o.Seed,
             include_issues = o.IncludeIssues,
             include_pull_requests = o.IncludePullRequests,
+            fetch_user_profiles = o.FetchUserProfiles,
             exported_at = DateTimeOffset.UtcNow,
         };
 
