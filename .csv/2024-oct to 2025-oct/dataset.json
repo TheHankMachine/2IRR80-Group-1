@@ -1,0 +1,12 @@
+{
+  "owner": "godotengine",
+  "repo": "godot",
+  "from": "2024-10-18T00:00:00+00:00",
+  "to": "2025-10-18T00:00:00+00:00",
+  "sample_size": null,
+  "seed": 42,
+  "include_issues": true,
+  "include_pull_requests": true,
+  "fetch_user_profiles": true,
+  "exported_at": "2026-10-23T16:42:59.0336098+00:00"
+}
